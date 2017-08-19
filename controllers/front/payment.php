@@ -66,7 +66,7 @@ class mondidopayPaymentModuleFrontController extends ModuleFrontController
             $items[] = [
                 'artno' => 'Discount',
                 'description' => $this->module->getTranslator()->trans('Discount', [], 'Modules.MondidoPay.Shop'),
-                'amount' => $total_discounts_tax_incl,
+                'amount' => -1 * $total_discounts_tax_incl,
                 'qty' => 1,
                 'vat' => number_format($total_discounts_tax_rate, 2, '.', ''),
                 'discount' => 0
