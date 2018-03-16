@@ -10,13 +10,10 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
 	    // Init Module
         $this->module = Module::getInstanceByName('mondidopay');
 
-        $log = new FileLogger();
-        $log->setFilename(_PS_ROOT_DIR_ . '/app/logs/mondidopay.log');
-
         $transaction_id = Tools::getValue('id');
         if (empty($transaction_id)) {
             header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-            $log->logDebug('Error: Invalid transaction ID');
+            $this->module->log('Error: Invalid transaction ID');
             exit('Error: Invalid transaction ID');
         }
 
@@ -27,7 +24,7 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
 		$cache_id = 'mondido_transaction_' .$transaction_id . $status;
 		if (Cache::getInstance()->exists($cache_id)) {
 			header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-			$log->logDebug("Payment confirmation rejected. Transaction ID: {$transaction_id}. Status: {$status}");
+			$this->module->log("Payment confirmation rejected. Transaction ID: {$transaction_id}. Status: {$status}");
 			exit("Payment confirmation rejected. Transaction ID: {$transaction_id}. Status: {$status}");
 		}
 
@@ -37,7 +34,7 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
 		$transaction_data = $this->module->lookupTransaction($transaction_id);
 		if (!$transaction_data) {
 			header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-			$log->logDebug('Error: Failed to verify transaction');
+			$this->module->log('Error: Failed to verify transaction');
 			exit('Failed to verify transaction');
 		}
 
@@ -58,7 +55,7 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
         ));
         if ($hash !== Tools::getValue('response_hash')) {
             header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-            $log->logDebug('Error: Hash verification failed');
+            $this->module->log('Error: Hash verification failed');
             exit('Hash verification failed');
         }
 
@@ -121,7 +118,7 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
 		}
 
         header(sprintf('%s %s %s', 'HTTP/1.1', '200', 'OK'), true, '200');
-        $log->logDebug("Order was placed by WebHook. Order ID: {$order_id}. Transaction status: {$transaction_data['status']}");
+        $this->module->log("Order was placed by WebHook. Order ID: {$order_id}. Transaction status: {$transaction_data['status']}");
         exit("Order was placed by WebHook. Order ID: {$order_id}. Transaction status: {$transaction_data['status']}");
 	}
 }
