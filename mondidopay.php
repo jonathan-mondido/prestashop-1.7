@@ -24,7 +24,7 @@ class mondidopay extends PaymentModule
         $this->displayName = $this->trans('Mondido Payments', [], 'Modules.MondidoPay.Admin');
         $this->description = $this->trans('Online payment by Mondido', [], 'Modules.MondidoPay.Admin');
         $this->author = 'Mondido';
-        $this->version = '1.5.3';
+        $this->version = '1.5.4';
         $this->tab = 'payments_gateways';
         $this->confirmUninstall = $this->trans('Are you sure you want to uninstall?', [], 'Modules.MondidoPay.Admin');
         $this->ps_versions_compliancy = ['min' => '1.7.0.0', 'max' => _PS_VERSION_];
@@ -46,6 +46,9 @@ class mondidopay extends PaymentModule
         if (empty($this->merchantID) || empty($this->password) || empty($this->secretCode)) {
             $this->warning = $this->trans('Please configure module', [], 'Modules.MondidoPay.Admin');
         }
+
+        // Since 1.5.4
+        $this->runUpgradeModule();
     }
 
     /**
@@ -79,7 +82,28 @@ class mondidopay extends PaymentModule
         return parent::uninstall();
     }
 
-    /**
+	/**
+	 * Upgrade Module
+	 * @return array|bool
+	 */
+    public function runUpgradeModule()
+    {
+    	if ($id_order_state = Configuration::get('PS_OS_MONDIDOPAY_PENDING')) {
+		    Db::getInstance()->execute(
+			    'UPDATE ' . _DB_PREFIX_ . 'order_state SET send_email = 0, logable = 0 WHERE id_order_state = ' . (int)$id_order_state
+		    );
+	    }
+
+	    if ($id_order_state = Configuration::get('PS_OS_MONDIDOPAY_DECLINED')) {
+		    Db::getInstance()->execute(
+			    'UPDATE ' . _DB_PREFIX_ . 'order_state SET logable = 0 WHERE id_order_state = ' . (int)$id_order_state
+		    );
+	    }
+
+	    return true;
+    }
+
+	/**
      * Add Order Statuses
      */
     private function addOrderStates()
@@ -89,12 +113,12 @@ class mondidopay extends PaymentModule
             $OrderState = new OrderState(null, Configuration::get('PS_LANG_DEFAULT'));
             $OrderState->name = 'Mondido: Pending';
             $OrderState->invoice = false;
-            $OrderState->send_email = true;
+            $OrderState->send_email = false;
             $OrderState->module_name = $this->name;
             $OrderState->color = '#4169E1';
             $OrderState->unremovable = true;
             $OrderState->hidden = false;
-            $OrderState->logable = true;
+            $OrderState->logable = false;
             $OrderState->delivery = false;
             $OrderState->shipped = false;
             $OrderState->paid = false;
@@ -169,7 +193,7 @@ class mondidopay extends PaymentModule
             $OrderState->color = '#DC143C';
             $OrderState->unremovable = true;
             $OrderState->hidden = false;
-            $OrderState->logable = true;
+            $OrderState->logable = false;
             $OrderState->delivery = false;
             $OrderState->shipped = false;
             $OrderState->paid = false;
@@ -533,5 +557,19 @@ class mondidopay extends PaymentModule
         @session_start();
         $_SESSION['message'] = $message;
         Tools::redirect($this->context->link->getModuleLink($this->module->name, 'error', [], true));
+    }
+
+	/**
+	 * Debug log
+	 * @param $message
+	 */
+    public function log($message)
+    {
+	    $file = _PS_ROOT_DIR_ . '/app/logs/mondidopay.log';
+	    if (!is_string($message)) {
+		    $message = var_export($message, true);
+	    }
+
+	    file_put_contents($file, date('Y/m/d - H:i:s') . ': '. $message . "\r\n", FILE_APPEND);
     }
 }

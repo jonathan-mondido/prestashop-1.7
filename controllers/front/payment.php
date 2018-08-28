@@ -75,7 +75,7 @@ class mondidopayPaymentModuleFrontController extends ModuleFrontController
 
         // Prepare Metadata
         $metadata = [
-            'products' => (array) $products,
+            'products' => $items,
             'customer' => [
                 'firstname' => $billing_address->firstname,
                 'lastname' => $billing_address->lastname,

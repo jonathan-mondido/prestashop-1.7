@@ -10,26 +10,33 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
 	    // Init Module
         $this->module = Module::getInstanceByName('mondidopay');
 
-        $log = new FileLogger();
-        $log->setFilename(_PS_ROOT_DIR_ . '/app/logs/mondidopay.log');
-
         $transaction_id = Tools::getValue('id');
         if (empty($transaction_id)) {
             header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-            $log->logDebug('Error: Invalid transaction ID');
+            $this->module->log('Error: Invalid transaction ID');
             exit('Error: Invalid transaction ID');
-        }
-
-        // Lookup transaction
-        $transaction_data = $this->module->lookupTransaction($transaction_id);
-        if (!$transaction_data) {
-            header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-            $log->logDebug('Error: Failed to verify transaction');
-            exit('Failed to verify transaction');
         }
 
         $payment_ref = Tools::getValue('payment_ref');
         $status = Tools::getValue('status');
+
+		// Use cache to prevent multiple requests
+		$cache_id = 'mondido_transaction_' .$transaction_id . $status;
+		if (Cache::getInstance()->exists($cache_id)) {
+			header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
+			$this->module->log("Payment confirmation rejected. Transaction ID: {$transaction_id}. Status: {$status}");
+			exit("Payment confirmation rejected. Transaction ID: {$transaction_id}. Status: {$status}");
+		}
+
+		Cache::getInstance()->set($cache_id, true, 60);
+
+		// Lookup transaction
+		$transaction_data = $this->module->lookupTransaction($transaction_id);
+		if (!$transaction_data) {
+			header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
+			$this->module->log('Error: Failed to verify transaction');
+			exit('Failed to verify transaction');
+		}
 
         $cart_id = str_replace(['dev', 'a'], '', $payment_ref);
         $cart = new Cart($cart_id);
@@ -48,7 +55,7 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
         ));
         if ($hash !== Tools::getValue('response_hash')) {
             header(sprintf('%s %s %s', 'HTTP/1.1', '400', 'FAILURE'), true, '400');
-            $log->logDebug('Error: Hash verification failed');
+            $this->module->log('Error: Hash verification failed');
             exit('Hash verification failed');
         }
 
@@ -70,13 +77,24 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
         }
 
         // Order was placed
-        if ($order_id) {
-            header(sprintf('%s %s %s', 'HTTP/1.1', '200', 'OK'), true, '200');
-            $log->logDebug("Order {$order_id} already placed. Cart ID: {$cart->id}");
-            exit("Order {$order_id} already placed. Cart ID: {$cart->id}");
+        if (!$order_id) {
+	        // Place order
+	        $this->module->validateOrder(
+		        $cart->id,
+		        Configuration::get('PS_OS_MONDIDOPAY_PENDING'),
+		        $total,
+		        $this->module->displayName,
+		        null,
+		        [],
+		        $currency->id,
+		        false,
+		        $cart->secure_key
+	        );
+
+	        $order_id = $this->module->currentOrder;
         }
 
-        // Place order
+        // Update Order status
         $statuses = [
             'pending' => Configuration::get('PS_OS_MONDIDOPAY_PENDING'),
             'approved' => Configuration::get('PS_OS_MONDIDOPAY_APPROVED'),
@@ -84,26 +102,23 @@ class mondidopayTransactionModuleFrontController extends ModuleFrontController
             'declined' => Configuration::get('PS_OS_MONDIDOPAY_DECLINED'),
             'failed' => Configuration::get('PS_OS_ERROR')
         ];
+		$id_order_state = $statuses[$status];
 
-        $this->module->validateOrder(
-            $cart->id,
-            $statuses[$status],
-            $total,
-            $this->module->displayName,
-            null,
-            ['transaction_id' => $transaction_id],
-            $currency->id,
-            false,
-            $cart->secure_key
-        );
+		$order = new Order($order_id);
+		if ((int)$order->current_state !== (int)$id_order_state) {
+			// Set the order status
+			$new_history = new OrderHistory();
+			$new_history->id_order = (int)$order->id;
+			$new_history->changeIdOrderState((int)$id_order_state, $order, true);
+			$new_history->addWithemail(true);
 
-        $order_id = $this->module->currentOrder;
-        if (in_array($status, ['pending', 'approved', 'authorized'])) {
-            $this->module->confirmOrder($order_id, $transaction_data);
-        }
+			if (in_array($status, ['approved', 'authorized'])) {
+				$this->module->confirmOrder($order_id, $transaction_data);
+			}
+		}
 
         header(sprintf('%s %s %s', 'HTTP/1.1', '200', 'OK'), true, '200');
-        $log->logDebug("Order was placed by WebHook. Order ID: {$order_id}. Transaction status: {$transaction_data['status']}");
+        $this->module->log("Order was placed by WebHook. Order ID: {$order_id}. Transaction status: {$transaction_data['status']}");
         exit("Order was placed by WebHook. Order ID: {$order_id}. Transaction status: {$transaction_data['status']}");
 	}
 }
